@@ -1,0 +1,11 @@
+= Miniserver-scala
+
+
+== Build
+
+Install ensime TODO: add link
+
+[source, shell]
+----
+sbt ensimeConfig
+----
