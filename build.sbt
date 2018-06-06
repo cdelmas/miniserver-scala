@@ -8,7 +8,7 @@ lazy val root = (project in file(".")).
       version      := "0.1.0-SNAPSHOT"
     )),
     name := "miniserver-scala",
-    libraryDependencies ++= circe ++ opRabbit ++ Seq (scalaTest % Test),
+    libraryDependencies ++= censorinus ++ opRabbit ++ Seq (scalaTest % Test),
     assemblyJarName in assembly := "miniserver-scala.jar",
     mainClass in assembly := Some("io.github.cdelmas.miniserver.Run")
   )

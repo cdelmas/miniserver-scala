@@ -28,5 +28,6 @@ COPY src/ ./src/
 RUN sbt assembly
 
 FROM openjdk:10.0.1-10-jre-slim as release
+COPY ./statsdexporter.yaml ./statsd_mapping.conf
 COPY --from=builder /root/target/scala-2.12/miniserver-scala.jar .
 CMD ["java","-jar","miniserver-scala.jar"]

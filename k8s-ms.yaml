@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ms-with-sidecar
+spec:
+  selector:
+    matchLabels:
+      app: mssc
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mssc
+    spec:
+      volumes:
+      - name: shared-data
+        emptyDir: {}
+      containers:
+      - name: microservice
+        image: miniserver-scala:0
+        resources:
+          limits:
+            memory: "500Mi"
+            cpu: "1"
+          requests:
+            memory: "96Mi"
+            cpu: "0.1"
+        volumeMounts:
+        - name: shared-data
+          mountPath: /conf
+        env:
+        - name: RABBITMQ_HOST
+          value: "rabbitmq.default"
+        command: ["/bin/sh"]
+        args: ["-c", "cp ./statsd_mapping.conf /conf && java -jar miniserver-scala.jar"]
+      - name: metrics-sidecar
+        image: prom/statsd-exporter
+        ports:
+          - containerPort: 9102
+        resources:
+          limits:
+            memory: "50Mi"
+            cpu: "1"
+          requests:
+            memory: "5Mi"
+            cpu: "0.1"
+        volumeMounts:
+        - name: shared-data
+          mountPath: /conf
+        args: ["-statsd.mapping-config=/conf/statsd_mapping.conf"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: miniserver-scala-metrics
+spec:
+  selector:
+    app: mssc
+  type: NodePort
+  ports:
+  - port: 9102
+    name: metrics

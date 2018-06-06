@@ -1,0 +1,6 @@
+mappings:
+- match: janedoe.*.message.*
+  name: "janedoe_${1}_message"
+  labels:
+    job: "$1"
+    status: "$2"
