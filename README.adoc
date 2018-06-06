@@ -1,11 +1,155 @@
-= Miniserver-scala
+= Metrics sidecar
+:imagesdir: images
 
+This project is a sample demonstrating the use of sidecar container as a Service Mesh for metrics push.
 
-== Build
+== The problem
+In our architecture, we have microservices that only use RabbitMQ as means of communication.
+However, the system aggregating the metrics (Prometheus) retrieves the data via an HTTP endpoint.
+We are therefore obliged to mount an HTTP server for this need only within each microservice.
 
-Install ensime TODO: add link
+== The solution
 
-[source, shell]
+As we deploy in Kubernetes, we can use a multi-container pod, one containing the microservice,
+the other containing a metrics server. The two containers being in the same pod, they are accessible
+for each other via localhost.
+
+In order to keep the thing simple, we use statsd as communication protocol. It is simple and client
+libraries exists in every language. Prometheus provides us with a custom exporter, allowing a seamless
+conversion between statsd and Prometheus metrics format.
+
+image::metrics-sidecar.png[]
+
+The microservice has two responsibilities: creating a statsd client and maintaining a mapping file. This
+file is used by the exporter to convert from the statsd format to the Prometheus'.
+
+.statsd exporter mapping example
+[source,yaml]
 ----
-sbt ensimeConfig
+include::statsdexporter.yaml[]
 ----
+
+The microservice itself is a very simple Scala service which will push
+metrics on each received AMQP message. Metrics are pushed using the statsd format (a.b.c.d...).
+
+== Building and running
+
+=== How to build?
+
+You only have to build the microservice Docker image:
+
+[source,shell]
+----
+$> docker build -t miniserver-scala:0 .
+----
+
+WARNING: this might take time on the first run, as the build image is quite heavy.
+
+=== How to deploy to Minikube?
+
+You need a running `minikube`, and `kubectl` configured to access it. The provided deployment / service yaml
+requires Kubernetes > v1.9.0.
+
+First, deploy RabbitMQ:
+
+[source,shell]
+----
+$> kubectl apply -f ./k8s-rabbitmq.yaml
+----
+
+Then, deploy the microservice:
+
+[source,shell]
+----
+$> kubectl apply -f ./k8s-ms.yaml
+----
+
+Once deployed, you can access the services using the minikube's VM ip and nodeport. To get these parameters:
+
+[source,shell]
+----
+$> minikube ip
+172.16.27.152
+$> kubectl get services
+NAME                       TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)                          AGE
+kubernetes                 ClusterIP   10.96.0.1       <none>        443/TCP                          22h
+miniserver-scala-metrics   NodePort    10.98.109.250   <none>        9102:30690/TCP                   2h
+rabbitmq                   NodePort    10.104.81.149   <none>        15672:32430/TCP,5672:30884/TCP   2h
+----
+
+=== Send a message to the service
+
+In this example, you can access the microservice sending a message on the RabbitMQ server. The admin plugin is installed,
+so you can connect to the admin ui at `http://172.16.27.152:32430/` with the default user credentials (guest/guest).
+Send text messages to the exchange `"myExchange"` with the routing key `"myKey"`.
+
+To obtain errors, include "kovfefe" in the message.
+
+=== Get the metrics
+
+Then, you can get the metrics on:
+
+[source,shell]
+----
+$> curl http://172.16.27.152:30690/metrics
+----
+
+Please note that `statsd_exporter` publishes all its internal metrics by default, and there is no way to remove them at the moment.
+Our metrics are listed as
+```
+janedoe_miniserversc_message{job=miniserversc,status=ok} 18
+janedoe_miniserversc_message{job=miniserverscstatus=nok} 3
+```
+
+== Details
+
+All the magic happens in the Kubernetes configuration (`k8s-deploy.yaml`).
+
+We add two containers, one being common (prom/statsd_exporter), one being the microservice. The main hack consists in sharing the configuration
+file owned by the microservice with the sidecar container. To do that, we use https://kubernetes.io/docs/tasks/access-application-cluster/communicate-containers-same-pod-shared-volume/[shared volumes].
+
+First, the volume is declared for the pod
+[source,yaml]
+----
+include::k8s-ms.yaml[lines=15..17]
+----
+
+Then, each container mounts the volume. The microservice:
+
+[source,yaml]
+----
+include::k8s-ms.yaml[lines=28..30]
+----
+
+And the statsd_exporter:
+
+[source,yaml]
+----
+include::k8s-ms.yaml[lines=47..49]
+----
+
+Now, the microservice container must copy the mapping file from its private directory to the volume.
+To do that, we override the Docker entrypoint:
+
+[source,yaml]
+----
+include::k8s-ms.yaml[lines=34..35]
+----
+
+== Next
+
+We could imagine that a sidecar container could be responsible for the healthcheck, thus unloading
+the microservice from this responsibility; this module could also be common.
+
+== Note
+
+The HTML version of this documentation can be generated using Docker:
+
+[source,shell]
+----
+# pull only once!
+$> docker pull asciidoctor/docker-asciidoctor
+$> docker run --rm -v $(PWD):/documents/ --entrypoint /bin/sh asciidoctor/docker-asciidoctor -c "asciidoctor -D target/doc README.adoc && cp -R images target/doc"
+----
+
+The documentation is available in target/doc.
