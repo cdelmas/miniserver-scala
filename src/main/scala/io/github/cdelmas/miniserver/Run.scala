@@ -1,45 +1,40 @@
 package io.github.cdelmas.miniserver
 
-import akka.actor.{ActorSystem, Props}
-import com.rabbitmq.client.{Address, ConnectionFactory}
-import com.spingo.op_rabbit._
-import github.gphat.censorinus.StatsDClient
+import cats.effect.{ExitCode, IO, IOApp}
+import com.github.gvolpe.fs2rabbit.config.Fs2RabbitConfig
+import com.github.gvolpe.fs2rabbit.interpreter.Fs2Rabbit
+import com.github.gvolpe.fs2rabbit.resiliency.ResilientStream
+import io.github.cdelmas.miniserver.interpreter.KamonMetrics
+import kamon.Kamon
+import kamon.statsd.StatsDReporter
 
-import scala.concurrent._
+import scala.Function.const
 
-object Run extends App {
-  println("hello")
+object Run extends IOApp {
 
-  implicit val executionContext: ExecutionContext = ExecutionContext.Implicits.global
-  implicit val actorSystem: ActorSystem = ActorSystem("miniserver-actor")
-  implicit val recoveryStrategy: RecoveryStrategy = RecoveryStrategy.limitedRedeliver()
+  Kamon.addReporter(new StatsDReporter)
 
-  val rabbitmqHost: String = System.getenv("RABBITMQ_HOST")
-
-  val connectionParams = ConnectionParams(
-    hosts = List(new Address(rabbitmqHost, ConnectionFactory.DEFAULT_AMQP_PORT)),
-    username = "guest",
-    password = "guest"
+  private val metrics = new KamonMetrics[IO](
+    Map(
+      "janedoe.miniserversc.message.nok" -> Kamon.counter("janedoe.miniserversc.message.nok"),
+      "janedoe.miniserversc.message.ok" -> Kamon.counter("janedoe.miniserversc.message.ok")
+    )
   )
-  val rabbitControl = actorSystem.actorOf(Props { new RabbitControl(connectionParams) })
 
-  val statsdClient = new StatsDClient("localhost", 9125)
+  private val config: Fs2RabbitConfig = Fs2RabbitConfig(virtualHost = "/",
+    host = sys.env("RABBITMQ_HOST"),
+    username = Some("guest"),
+    password = Some("guest"),
+    port = 5672,
+    ssl = false,
+    sslContext = None,
+    connectionTimeout = 3,
+    requeueOnNack = false)
 
-  val subscriptionRef = Subscription.run(rabbitControl) {
-    import com.spingo.op_rabbit.Directives._
-    channel(qos = 3) {
-      val e = Exchange.direct("myExchange")
-      val q = Queue("myQueue")
-      val b = Binding.direct(q, e, List("myKey"))
-      consume(b) {
-        (body(as[String]) & routingKey) { (msg, key) =>
-          if (msg contains "kovfefe") statsdClient.increment("janedoe.miniserversc.message.nok") else statsdClient.increment("janedoe.miniserversc.message.ok")
-          /* do work; this body is executed in a separate thread, as
-             provided by the implicit execution context */
-          println(s"""received $msg over '$key'.""")
-          ack
-        }
-      }
-    }
-  }
+  implicit val fs2rabbit: Fs2Rabbit[IO] = Fs2Rabbit[IO](config)
+
+  override def run(args: List[String]): IO[ExitCode] = ResilientStream.run(
+    new KovfefeConsumer[IO](RabbitMqBinding("myExchange", "myKey", "myQueue"), metrics).program
+  ).map(const(ExitCode.Success))
+
 }
