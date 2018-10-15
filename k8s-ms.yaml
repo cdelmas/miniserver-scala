@@ -47,7 +47,8 @@ spec:
         volumeMounts:
         - name: shared-data
           mountPath: /conf
-        args: ["-statsd.mapping-config=/conf/statsd_mapping.conf"]
+        args:
+          - --statsd.mapping-config=/conf/statsd_mapping.conf
 ---
 apiVersion: v1
 kind: Service

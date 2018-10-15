@@ -4,21 +4,17 @@ import cats.effect.{ExitCode, IO, IOApp}
 import com.github.gvolpe.fs2rabbit.config.Fs2RabbitConfig
 import com.github.gvolpe.fs2rabbit.interpreter.Fs2Rabbit
 import com.github.gvolpe.fs2rabbit.resiliency.ResilientStream
-import io.github.cdelmas.miniserver.interpreter.KamonMetrics
-import kamon.Kamon
-import kamon.statsd.StatsDReporter
+import github.gphat.censorinus.StatsDClient
+import io.github.cdelmas.miniserver.interpreter.CensorinusMetrics
 
 import scala.Function.const
 
 object Run extends IOApp {
 
-  Kamon.addReporter(new StatsDReporter)
+  private val statsDClient = new StatsDClient("localhost", 9125)
 
-  private val metrics = new KamonMetrics[IO](
-    Map(
-      "janedoe.miniserversc.message.nok" -> Kamon.counter("janedoe.miniserversc.message.nok"),
-      "janedoe.miniserversc.message.ok" -> Kamon.counter("janedoe.miniserversc.message.ok")
-    )
+  private val metrics = new CensorinusMetrics[IO](
+    statsDClient
   )
 
   private val config: Fs2RabbitConfig = Fs2RabbitConfig(virtualHost = "/",
