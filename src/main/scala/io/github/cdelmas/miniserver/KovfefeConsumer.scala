@@ -1,6 +1,5 @@
 package io.github.cdelmas.miniserver
 
-import cats.{Applicative, Monad}
 import cats.effect.Concurrent
 import com.github.gvolpe.fs2rabbit.config.declaration.{DeclarationExchangeConfig, DeclarationQueueConfig}
 import com.github.gvolpe.fs2rabbit.interpreter.Fs2Rabbit
@@ -13,7 +12,7 @@ import io.github.cdelmas.miniserver.algebra.Metrics
 
 case class RabbitMqBinding(exchangeName: String, routingKey: String, queueName: String)
 
-class KovfefeConsumer[F[_] : Concurrent : Applicative](binding: RabbitMqBinding, metrics: Metrics[F])(implicit F: Fs2Rabbit[F], A: Applicative[F], SE: StreamEval[F]) {
+class KovfefeConsumer[F[_] : Concurrent](binding: RabbitMqBinding, metrics: Metrics[F])(implicit F: Fs2Rabbit[F], SE: StreamEval[F]) {
 
   private val exchangeName = ExchangeName(binding.exchangeName)
   private val queueName = QueueName(binding.queueName)
@@ -23,13 +22,12 @@ class KovfefeConsumer[F[_] : Concurrent : Applicative](binding: RabbitMqBinding,
     for {
       amqpMsg <- streamMsg
       _ <- SE.evalF[Unit](println(s"Consumed: $amqpMsg"))
-      _ <- Stream.eval(A.pure(
+      _ <- Stream.eval(
         if (amqpMsg.payload contains "kovfefe")
           metrics.incrementCounter("janedoe.miniserversc.message.nok")
         else
           metrics.incrementCounter("janedoe.miniserversc.message.ok")
-      )
-      )
+      ).covary[F]
     } yield Ack(amqpMsg.deliveryTag)
   }
 
