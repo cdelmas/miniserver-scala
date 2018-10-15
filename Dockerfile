@@ -1,7 +1,7 @@
 FROM openjdk:10.0.1-10-jdk as base
 # we redefine the hseeberger/scala-sbt base image as it is using openjdk 8 to build
 ENV SCALA_VERSION 2.12.6 
-ENV SBT_VERSION 1.1.6
+ENV SBT_VERSION 1.2.4
 # Install Scala
 RUN \
   curl -fsL https://downloads.typesafe.com/scala/$SCALA_VERSION/scala-$SCALA_VERSION.tgz | tar xfz - -C /root/ && \
